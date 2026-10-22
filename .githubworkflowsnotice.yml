@@ -1,0 +1,53 @@
+name: notice-watch
+
+on:
+  schedule:
+    - cron: "*/30 * * * *"   # 30분마다 (비공개 저장소면 "0 * * * *" 1시간마다 권장)
+  workflow_dispatch:
+    inputs:
+      debug:
+        description: "1이면 찾은 링크 목록만 출력 (선택자 점검용)"
+        default: "0"
+      test_mail:
+        description: "1이면 테스트 메일만 발송"
+        default: "0"
+
+permissions:
+  contents: write
+
+concurrency:
+  group: notice-watch
+  cancel-in-progress: false
+
+jobs:
+  run:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+          cache: pip
+
+      - run: pip install -r requirements.txt
+
+      - name: Run crawler
+        env:
+          NOTICE_URLS: ${{ vars.NOTICE_URLS }}
+          KEYWORDS: ${{ vars.KEYWORDS }}
+          LIST_SELECTOR: ${{ vars.LIST_SELECTOR }}
+          MATCH_BODY: ${{ vars.MATCH_BODY }}
+          GMAIL_USER: ${{ secrets.GMAIL_USER }}
+          GMAIL_APP_PASSWORD: ${{ secrets.GMAIL_APP_PASSWORD }}
+          MAIL_TO: ${{ secrets.MAIL_TO }}
+          DEBUG: ${{ github.event.inputs.debug }}
+          TEST_MAIL: ${{ github.event.inputs.test_mail }}
+        run: python crawl.py
+
+      - name: Save seen.json
+        run: |
+          git config user.name "github-actions[bot]"
+          git config user.email "github-actions[bot]@users.noreply.github.com"
+          git add seen.json || true
+          git diff --cached --quiet || (git commit -m "update seen.json" && git push)
